@@ -2,5 +2,12 @@
   "repository": "https://github.com/peterholko/omarchy-kids",
   "commit": "8ab125dbc38a1e228f8de044450b864a8b4fc218",
   "path": "shell/plugins/number-grove",
-  "exporter": "packaging/community/export.py"
+  "exporter": "packaging/community/export.py",
+  "development_repository": "https://github.com/peterholko/omarchy-number-grove",
+  "screen_time_integration": {
+    "plugin": "peterholko.screen-time",
+    "api_version": 1,
+    "provider": "peterholko.number-grove",
+    "service_version": "3.0.0"
+  }
 }

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "io.github.peterholko.number-grove",
   "name": "Number Grove",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Peter Holko",
-  "description": "An arithmetic garden game with calm and adventure play for grades 1\u20136.",
+  "description": "An arithmetic garden game with calm and adventure play for grades 1–6.",
   "kinds": [
     "panel"
   ],

@@ -235,8 +235,13 @@ QTest.qWait(1800)
 assert state() == snapshot
 capture('checking')
 token = requests[-1][0]
-js(f'game.acceptReward({token}, {{ok: true, correct: true, answer: 56, reward_seconds: 30}})')
+js(f'game.acceptReward({token}, {{ok: true, correct: true, answer: 56, reward_seconds: null}})')
+assert state()['earned'] == 0
+capture('reward-pending')
+js('game.rewardReceipts = [{id:"another-round",reward_seconds:600},{id:"test-question",reward_seconds:30}]')
 assert state()['earned'] == 30
+js('game.rewardReceipts = [{id:"test-question",reward_seconds:30}]')
+assert state()['earned'] == 30, 'status replay duplicated the displayed credit'
 capture('reward')
 key(Qt.Key_Return)
 abandoned = requests[-1][0]

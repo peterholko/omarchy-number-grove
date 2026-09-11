@@ -24,7 +24,6 @@ Item {
   }
   RewardBridge {
     id: rewards
-    omarchyPath: root.omarchyPath
     onReply: function(token, result) { game.acceptReward(token, result) }
   }
   FloatingWindow {
@@ -43,10 +42,12 @@ Item {
       windowActive: Window.active && root.opened
       rewardAvailable: rewards.available
       rewardNote: rewards.note
-      rewardGrade: rewards.grade
-      rewardQuestions: rewards.questions
-      rewardMinutes: rewards.minutes
-      onRewardRequest: function(token, kind, questionId, value) { rewards.request(token, kind, questionId, value) }
+      rewardGrade: game.grade
+      rewardReceipts: rewards.receipts
+      rewardQuestions: 10
+      rewardSeconds: rewards.seconds
+      onParentSettingsRequested: rewards.openParentSettings()
+      onRewardRequest: function(token, kind, questionId, value) { rewards.request(token, kind === "next" ? {cmd: "begin", grade: value} : {cmd: "complete", id: questionId, answer: value}) }
       onCancelRewards: rewards.cancel()
       onQuitRequested: root.close()
     }

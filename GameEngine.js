@@ -19,7 +19,7 @@ function shuffled(state, values) {
 function create(grade, mode, total, seed) {
   return { grade: grade, mode: mode, total: Math.max(1, Math.min(50, total)), seed: seed >>> 0,
     phase: "waiting", answered: 0, correct: 0, hearts: 3, score: 0, streak: 0,
-    earned: 0, player: HOME, bugs: [], stones: [], tiles: [], shield: 0,
+    creditRewards: {}, earned: 0, player: HOME, bugs: [], stones: [], tiles: [], shield: 0,
     question: null, message: "Finding a fresh seed…", good: false }
 }
 function difficulty(state) { return Math.min(4, 1 + Math.floor(state.correct / 3)) }
@@ -102,7 +102,7 @@ function verdict(state, result) {
     var error = result && result.error
     if (error === "too_fast") {
       s.phase = "play"; s.message = "Take a moment, then collect that seed again."
-    } else if (error === "expired" || error === "no_such_question") {
+    } else if (error === "expired" || error === "no_such_question" || error === "stale_challenge") {
       s.phase = "feedback"; s.message = "That question expired. Let's try a fresh one."; s.good = false
     } else {
       s.phase = "error"; s.message = "Rewards could not be confirmed. Try again or start a practice round."
@@ -112,13 +112,24 @@ function verdict(state, result) {
   s.answered++; s.good = result.correct === true
   if (s.good) {
     s.correct++; s.streak++; s.score += 100 + Math.min(5, s.streak - 1) * 20
-    s.earned += Math.max(0, Number(result.reward_seconds) || 0)
+    if (s.question.id) s.creditRewards[s.question.id] = result.reward_seconds === null ? null : Math.max(0, Number(result.reward_seconds) || 0)
+    s.earned = Object.keys(s.creditRewards).reduce(function(total, id) { return total + (s.creditRewards[id] || 0) }, 0)
     s.message = "Correct! Another seed for your grove."
   } else {
     s.hearts--; s.streak = 0
     s.message = s.question.text + " = " + result.answer + ". Keep that fact for next time."
   }
   s.phase = s.answered >= s.total || s.hearts <= 0 ? "results" : "feedback"
+  return s
+}
+function credits(state, receipts) {
+  if (!state || !state.creditRewards) return state
+  var s = copy(state), updates = receipts || []
+  updates.forEach(function(receipt) {
+    if (Object.prototype.hasOwnProperty.call(s.creditRewards, receipt.id) && receipt.reward_seconds !== null)
+      s.creditRewards[receipt.id] = Math.max(0, Number(receipt.reward_seconds) || 0)
+  })
+  s.earned = Object.keys(s.creditRewards).reduce(function(total, id) { return total + (s.creditRewards[id] || 0) }, 0)
   return s
 }
 function waiting(state) {
@@ -130,5 +141,5 @@ function failure(state, message) {
 if (typeof module !== "undefined") module.exports = {
   COLUMNS: COLUMNS, ROWS: ROWS, HOME: HOME, create: create, board: board, move: move,
   tick: tick, collect: collect, verdict: verdict, difficulty: difficulty, interval: interval,
-  waiting: waiting, failure: failure, neighbour: neighbour
+  credits: credits, waiting: waiting, failure: failure, neighbour: neighbour
 }

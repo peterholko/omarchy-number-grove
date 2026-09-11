@@ -15,7 +15,10 @@ FocusScope {
   property string rewardNote: "Practice is ready. Add Screen Time to enable parent-controlled rewards."
   property int rewardGrade: 5
   property int rewardQuestions: 10
-  property int rewardMinutes: 30
+  property int rewardSeconds: 0
+  property var rewardReceipts: []
+  onRewardReceiptsChanged: session = Engine.credits(session, rewardReceipts)
+  signal parentSettingsRequested()
   property int grade: 5
   property bool calm: false
   property bool paused: false
@@ -64,7 +67,7 @@ FocusScope {
     if (pendingRequest !== -1) return
     session = Engine.waiting(session)
     if (session.mode === "practice") session = Engine.board(session, Facts.question(session.grade))
-    else request("next", "", 0)
+    else request("next", "", session.grade)
     focusGame()
   }
   function acceptReward(token, result) {
@@ -73,7 +76,7 @@ FocusScope {
     pendingRequest = -1
     if (kind === "next") {
       if (result && result.ok && result.question) {
-        // The parent service owns the reward grade and set size.
+        // The verifier confirms the selected grade and issues the question.
         var updated = JSON.parse(JSON.stringify(session))
         updated.grade = Facts.level(String(result.level).replace("grade", ""))
         updated.total = Math.max(1, Math.min(50, Number(result.questions_per_set) || 10))
@@ -158,6 +161,11 @@ FocusScope {
       text: page.playing ? (root.paused ? "Resume" : "Pause  ·  P") : "Close"
       onClicked: page.playing ? root.togglePause() : root.quitRequested()
     }
+    GroveButton {
+      objectName: "screenTimeSettingsButton"; x: 642; y: 28; width: 188; height: 42
+      text: "Screen Time · Parents"; font.pixelSize: 13
+      onClicked: { if (page.playing) root.paused = true; root.parentSettingsRequested() }
+    }
     Rectangle { x: 40; y: 94; width: 960; height: 1; color: "#DCE0CE" }
 
     Column {
@@ -195,7 +203,7 @@ FocusScope {
       }
       Text {
         width: 306; text: root.rewardAvailable
-          ? "Rewards: grade " + root.rewardGrade + " · " + root.rewardQuestions + " correct answers earn up to " + root.rewardMinutes + " min."
+          ? root.rewardSeconds + " seconds per correct answer. Parent daily limits apply."
           : root.rewardNote
         color: "#6E7D68"; font.pixelSize: 12; lineHeight: 1.15; wrapMode: Text.WordWrap
       }
