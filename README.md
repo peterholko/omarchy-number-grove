@@ -51,6 +51,8 @@ Uses the Quickshell and Qt Quick runtime supplied by Omarchy. The game runs loca
 
 ## Update
 
+The bundled shared service 3.0.1 fixes status-file permission failures that can leave the School / Free Time launcher showing only Style. Install this fix with both the plugin update and the service setup below, then run `omarchy restart shell`. Saved parent settings, app approvals, schedules and game progress are retained.
+
 ```bash
 omarchy plugin update io.github.peterholko.number-grove
 ```

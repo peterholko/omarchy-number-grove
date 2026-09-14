@@ -8,6 +8,6 @@
     "plugin": "peterholko.screen-time",
     "api_version": 1,
     "provider": "peterholko.number-grove",
-    "service_version": "3.0.0"
+    "service_version": "3.0.1"
   }
 }
