@@ -11,7 +11,6 @@ from . import clock, paths, proto
 from .auth import ParentAuth
 from .migrate import migrate
 from .storage import read_json, write_json
-from .game_platform import Platform
 
 
 class Daemon:
@@ -27,7 +26,6 @@ class Daemon:
         self.server = None
         self.connections = threading.BoundedSemaphore(32)
         self.services = {}
-        self.platform = Platform()
         self.health = {}
         migrate(layout)
         allowed = {"school": "school_mode", "time": "screen_time", "pawberry": "pawberry", "grove": "number_grove", "typing": "paw_post"}
@@ -194,7 +192,6 @@ class Daemon:
                 for service in self.services.values():
                     service.save()
             self.layout.socket_path.unlink(missing_ok=True)
-            self.platform.close()
 
     def shutdown(self, *_):
         self.stop_event.set()

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const Facts = require('../Facts.js')
 const Game = require('../GameEngine.js')
 const question = {id: 'q1', text: '7 × 8', choices: [42, 48, 54, 56, 63, 72]}
-function fresh(seed = 42, total = 10) { return Game.board(Game.create(5, 'practice', total, seed), question) }
+function fresh(seed = 42, total = 10) { return Game.board(Game.create(5, total, seed), question) }
 function atAnswer(state, answer = 56) { return {...state, player: state.tiles.indexOf(answer)} }
 function answer(state, correct = true) { return Game.verdict(Game.collect(atAnswer(state)), {ok: true, correct, answer: 56, reward_seconds: 30}) }
 
@@ -100,7 +100,7 @@ test('answers update one time, teach missed facts, and stop after the goal or th
   let s = answer(fresh())
   assert.equal(s.correct, 1)
   assert.equal(s.score, 100)
-  assert.equal(s.earned, 30)
+  assert.equal(s.earned, undefined)
   assert.equal(Game.verdict(s, {ok: true, correct: true, reward_seconds: 9999}), s)
   s = answer(Game.board(s, question), false)
   assert.equal(s.hearts, 2)
@@ -109,7 +109,7 @@ test('answers update one time, teach missed facts, and stop after the goal or th
   s = answer(Game.board(s, question), false)
   s = answer(Game.board(s, question), false)
   assert.equal(s.phase, 'results')
-  assert.equal(s.earned, 30)
+  assert.equal(s.earned, undefined)
   assert.equal(answer(fresh(42, 1)).phase, 'results')
 })
 
@@ -117,7 +117,7 @@ test('stale, early, and failed requests never credit points or consume a heart',
   const checking = Game.collect(atAnswer(fresh()))
   for (const error of ['too_fast', 'expired', 'no_such_question', 'unavailable', 'timeout']) {
     const s = Game.verdict(checking, {ok: false, error})
-    assert.equal(s.earned, 0)
+    assert.equal(s.earned, undefined)
     assert.equal(s.answered, 0)
     assert.equal(s.hearts, 3)
     assert.equal(s.phase, error === 'too_fast' ? 'play' : ['expired', 'no_such_question'].includes(error) ? 'feedback' : 'error')

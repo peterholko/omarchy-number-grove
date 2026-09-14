@@ -33,7 +33,7 @@ class Setup(unittest.TestCase):
         self.context.enter_context(patch.object(m,'run',lambda *args,**kwargs:self.calls.append(args)))
         self.context.enter_context(patch.object(m,'enroll',lambda *args:self.enrollments.append(args)))
         self.context.enter_context(patch.object(m,'wait_for_service',lambda:None))
-        self.context.enter_context(patch.object(m,'register_providers',lambda modules:None))
+        self.context.enter_context(patch.object(m,'remove_game_providers',lambda:None))
         original_is_file=Path.is_file
         self.context.enter_context(patch.object(Path,'is_file',lambda path:True if str(path)=='/usr/share/omarchy/config/omarchy/shell.json' else original_is_file(path)))
 
@@ -73,6 +73,45 @@ class Setup(unittest.TestCase):
             self.install('typing')
         self.assertEqual(target.read_text(),'local administrator change')
         self.assertEqual(m.installed()['modules'],['grove'])
+
+
+    def test_upgrade_removes_old_credit_code_and_preserves_other_modules(self):
+        m = self.manage
+        m.PASSWORD_PATH.write_text('{"keep":"existing password"}')
+        self.install('school')
+        marker = m.installed()
+        obsolete = m.PREFIX / 'omarchy_kids/core/game_platform.py'
+        obsolete.write_text('# former credit transport')
+        marker.update(version='3.0.1', payload=m.payload_files(m.PREFIX))
+        m.write_json(m.MARKER, marker)
+        school = '{"users":{"linnea":{"enabled":true,"apps":["chromium"]}}}'
+        (m.CONFIG/'school-mode.json').write_text(school)
+        with patch.object(m, 'remove_game_providers') as remove:
+            self.install('pawberry')
+            remove.assert_called_once_with()
+        self.assertFalse(obsolete.exists())
+        self.assertEqual(m.installed()['version'], '4.0.0')
+        self.assertEqual(m.installed()['modules'], ['pawberry', 'school'])
+        self.assertEqual((m.CONFIG/'school-mode.json').read_text(), school)
+        self.assertNotIn('/var/lib/peterholko-screen-time', m.UNIT.read_text())
+
+
+class ProviderRemoval(unittest.TestCase):
+    def test_cleanup_removes_only_the_three_game_registrations_and_reports_errors(self):
+        spec = importlib.util.spec_from_file_location('provider_cleanup_fixture', ROOT/'service/manage.py')
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        with patch.object(Path, 'is_file', return_value=True), patch.object(m, 'run') as run:
+            run.return_value = SimpleNamespace(stdout='{"ok":true}')
+            m.remove_game_providers()
+            self.assertEqual([call.args for call in run.call_args_list], [
+                ('/usr/bin/omarchy-peterholko-screen-time-admin', 'provider-remove', provider)
+                for provider in ('peterholko.pawberry', 'peterholko.number-grove', 'peterholko.paw-post')])
+            run.return_value = SimpleNamespace(stdout='{"ok":false,"error":"service_error"}')
+            with self.assertRaisesRegex(ValueError, 'could not remove'):
+                m.remove_game_providers()
+        with patch.object(Path, 'is_file', return_value=False), patch.object(m, 'run') as run:
+            m.remove_game_providers()
+            run.assert_not_called()
 
 if __name__=='__main__':
     unittest.main()

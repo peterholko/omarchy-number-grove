@@ -22,13 +22,9 @@ if role == 'daemon':
 elif role == 'pawberry':
     from omarchy_kids.pawberry.client import main
 elif role == 'grove':
-    if args and args[0] == 'request':
-        from omarchy_kids.core.game_client import main as game_main
-        def main():
-            return game_main('grove')
-    else:
-        # Keep the former client protocol usable by installed older games.
-        from omarchy_kids.number_grove.rewards import main
+    from omarchy_kids.core.game_client import main as game_main
+    def main():
+        return game_main('grove')
 elif role == 'typing':
     from omarchy_kids.core.game_client import main as game_main
     def main():

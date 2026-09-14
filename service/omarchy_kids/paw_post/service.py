@@ -15,7 +15,7 @@ class Service(GameService):
         if not isinstance(lesson, str) or lesson not in BANK:
             raise ValueError("lesson")
         text = secrets.choice(BANK[lesson])
-        # Short practice words form one substantial reward delivery.
+        # Combine short words into a complete practice delivery.
         while len(text) < 12:
             text += " " + secrets.choice(BANK[lesson])
         return {"text": text, "lesson": lesson}
@@ -49,7 +49,6 @@ class Service(GameService):
             return {"ok": False, "error": "incomplete_delivery"}
         if elapsed < 2 or previous < max(1500, len(typed) * 50):
             return {"ok": False, "error": "too_fast"}
-        # Completing the delivery is still a game success below the reward
-        # threshold, with a terminal zero-credit receipt.
+        # Record accuracy without granting or removing screen time.
         return {"ok": True, "correct": attempts > 0 and correct / attempts >= 0.85,
             "accuracy": round(100 * correct / max(1, attempts))}

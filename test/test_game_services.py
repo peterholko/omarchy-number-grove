@@ -20,7 +20,9 @@ sys.path.insert(0, str(ROOT / 'service'))
 from omarchy_kids.core import paths, storage
 from omarchy_kids.core.auth import ParentAuth
 from omarchy_kids.core.daemon import Daemon
-from omarchy_kids.core.game_platform import Platform, PROVIDERS
+PROVIDERS = {'pawberry': ('peterholko.pawberry', 'Pawberry', 'problem'),
+    'grove': ('peterholko.number-grove', 'Grove', 'challenge'),
+    'typing': ('peterholko.paw-post', 'Paw Post', 'delivery')}
 from omarchy_kids.pawberry import work
 from omarchy_kids.pawberry.service import answer_for
 
@@ -36,49 +38,14 @@ class Games(unittest.TestCase):
         self.host = Daemon(paths.detect(self.root), modules=['pawberry', 'grove', 'typing'], log=lambda *args: None)
         self.host.clock.now = lambda: self.now
         self.host.auth = ParentAuth(verifier=lambda username, password: password == 'parent-secret')
-        self.ledger, self.calls = {}, []
-        self.host.platform.close()
-        self.host.platform = Platform(self.root / 'platform', self.credit, clock=lambda: self.now, trusted_owner=os.getuid())
-        self.addCleanup(self.host.platform.close)
         for module in PROVIDERS:
             self.assertTrue(self.send(module, 'users.set', peer=0, user=self.user, enabled=True)['ok'])
-        self.publish()
-
-    def publish(self, **updates):
-        data = {'ok': True, 'plugin_id': 'peterholko.screen-time', 'api_version': 1, 'phase': 'running',
-            'philosophy': 'limits', 'remaining_seconds': 600, 'credits': {'enabled': True, 'room_seconds': 300,
-            'providers': {provider[0]: {'enabled': True, 'seconds_per_event': 60,
-                'daily_cap_minutes': 5, 'credited_today_seconds': 0} for provider in PROVIDERS.values()}}}
-        data.update(updates)
-        self.status_path = self.root / 'platform' / str(self.uid) / 'status.json'
-        self.status_path.parent.mkdir(parents=True, exist_ok=True)
-        self.status_path.write_text(json.dumps(data))
-        os.utime(self.status_path, (self.now, self.now))
 
     def advance(self, seconds=10):
         self.now += seconds
-        if self.status_path.exists():
-            os.utime(self.status_path, (self.now, self.now))
-
-    def credit(self, user, provider, identifier, day):
-        key = (user, provider, identifier, day)
-        self.calls.append(key)
-        if day != datetime.fromtimestamp(self.now).date().isoformat():
-            return {'ok': False, 'error': 'wrong_day'}
-        self.ledger.setdefault(key, {'ok': True, 'credited_seconds': 60})
-        return self.ledger[key]
 
     def send(self, scope, cmd, peer=None, **message):
         return self.host.dispatch(self.uid if peer is None else peer, {'scope': scope, 'cmd': cmd, **message})
-
-    def settled(self, scope, identifier):
-        for _ in range(200):
-            status = self.send(scope, 'status')
-            for receipt in status.get('receipts', status.get('reward_receipts', [])):
-                if receipt['id'] == identifier and receipt['reward_seconds'] is not None:
-                    return receipt['reward_seconds']
-            time.sleep(.005)
-        self.fail('reward did not settle')
 
     def pawberry(self, operation='add', **extra):
         a, b = (18, 3) if operation == 'divide' else (8, 7) if operation == 'multiply' else (61, 29)
@@ -87,10 +54,6 @@ class Games(unittest.TestCase):
     def solve_pet(self, started):
         self.advance()
         return self.send('pawberry', 'complete', id=started['id'], answer=answer_for(started['problem']), steps=work.expected_steps(started['problem']))
-
-    def enable_pet(self):
-        result = self.send('pawberry', 'settings.set', password='parent-secret', screen_time={'enabled': True, 'backend': 'platform'})
-        self.assertTrue(result['ok'], result)
 
     def test_only_requested_games_are_loaded_and_cannot_grant_arbitrary_time(self):
         self.assertEqual(set(self.host.services), {'pawberry', 'grove', 'typing'})
@@ -101,13 +64,11 @@ class Games(unittest.TestCase):
         result = self.send('grove', 'begin', grade=6, user='root', correct=True, seconds=3600)
         self.assertTrue(result['ok'])
         self.assertNotIn('answer', result['question'])
-        self.assertFalse(self.ledger)
+        self.assertFalse(hasattr(self.host, 'platform'))
 
     def test_pawberry_parent_limits_and_settings_keep_todays_work(self):
-        self.enable_pet()
         started = self.pawberry('multiply')
         self.assertTrue(self.solve_pet(started)['ok'])
-        self.assertEqual(self.settled('pawberry', started['id']), 60)
         bad = self.send('pawberry', 'limits.set', limits={'multiply': 0}, password='wrong')
         self.assertEqual(bad['error'], 'bad_password')
         saved = self.send('pawberry', 'limits.set', limits={'add': 5, 'subtract': 5, 'multiply': 1}, password='parent-secret')
@@ -118,10 +79,8 @@ class Games(unittest.TestCase):
         replay = self.solve_pet(started)
         self.assertTrue(replay['already_completed'])
         self.assertEqual(replay['completed']['multiply'], 1)
-        self.assertEqual(len(self.ledger), 1)
 
     def test_pawberry_requires_all_work_and_server_issued_problem(self):
-        self.enable_pet()
         started = self.pawberry()
         pending = self.host.services['pawberry'].account(self.uid)['pending']
         self.assertEqual(started['problem']['a'], pending['a'])
@@ -131,21 +90,19 @@ class Games(unittest.TestCase):
         for steps in (None, [], [{'kind': 'final', 'value': correct}], [{'kind': 'final', 'value': True}]):
             self.assertEqual(self.send('pawberry', 'complete', id=identifier, answer=correct, steps=steps)['error'], 'incomplete_work')
         self.assertEqual(self.send('pawberry', 'complete', id=identifier, answer=correct+1, steps=work.expected_steps(problem))['error'], 'incorrect_answer')
-        self.assertFalse(self.ledger)
+        self.assertFalse(hasattr(self.host, 'platform'))
         self.assertTrue(self.solve_pet(started)['ok'])
-        self.assertEqual(self.settled('pawberry', identifier), 60)
         legacy = self.send('pawberry', 'begin', problem={'operation': 'add', 'a': 11, 'b': 12})
-        self.assertEqual(legacy['error'], 'update_game_required')
+        self.assertTrue(legacy['ok'])
 
-    def test_pawberry_backend_switch_does_not_credit_same_problem_elsewhere(self):
-        self.enable_pet()
-        started = self.pawberry()
-        # Changing the backend cannot retarget an already issued challenge.
-        self.send('pawberry', 'settings.set', password='parent-secret', screen_time={'enabled': False, 'backend': 'legacy'})
-        result = self.solve_pet(started)
-        self.assertTrue(result['ok'])
-        self.assertEqual(result['reward_seconds'], 0)
-        self.assertFalse(self.ledger)
+    def test_parent_settings_cannot_reenable_time_rewards(self):
+        for backend in ('legacy', 'platform'):
+            result = self.send('pawberry', 'settings.set', password='parent-secret',
+                limits={'add': 5}, screen_time={'enabled': True, 'backend': backend})
+            self.assertEqual(result['error'], 'rewards_removed')
+        status = self.send('pawberry', 'status')
+        self.assertTrue(status['practice_only'])
+        self.assertNotIn('screen_time', status)
 
     def test_grove_grades_answers_and_replays(self):
         grove = self.host.services['grove']
@@ -163,17 +120,14 @@ class Games(unittest.TestCase):
         self.assertFalse(self.send('grove', 'complete', id=pending['id'], answer=True)['ok'])
         result = self.send('grove', 'complete', id=pending['id'], answer=pending['answer'])
         self.assertTrue(result['correct'])
-        self.assertEqual(self.settled('grove', pending['id']), 60)
         replay = self.send('grove', 'complete', id=pending['id'], answer=0)
         self.assertTrue(replay['already_completed'])
-        self.assertEqual(replay['reward_seconds'], 60)
-        self.assertEqual(len(self.ledger), 1)
+        self.assertEqual(replay['reward_seconds'], 0)
         self.send('grove', 'begin', grade=5)
         pending = grove.account(self.uid)['pending']; self.advance()
         wrong = next(n for n in pending['choices'] if n != pending['answer'])
         self.assertFalse(self.send('grove', 'complete', id=pending['id'], answer=wrong)['correct'])
         self.assertFalse(self.send('grove', 'complete', id=pending['id'], answer=pending['answer'])['correct'])
-        self.assertEqual(len(self.ledger), 1)
 
     def test_typing_checks_text_accuracy_timing_and_only_game_input(self):
         self.assertEqual(self.send('typing', 'begin', lesson={})['error'], 'invalid_challenge')
@@ -187,70 +141,57 @@ class Games(unittest.TestCase):
         self.assertFalse(self.send('typing', 'complete', id=started['id'], events=[{**e, 'ms': 0} for e in events])['ok'])
         result = self.send('typing', 'complete', id=started['id'], events=events)
         self.assertTrue(result['correct'])
-        self.assertEqual(self.settled('typing', started['id']), 60)
         started = self.send('typing', 'begin', lesson='words')
         keys = list('zzzzzzzzzz') + ['Backspace']*10 + list(started['text'])
         self.advance(len(keys)*.2+2)
         result = self.send('typing', 'complete', id=started['id'], events=[{'key': c, 'ms': (i+1)*200} for i,c in enumerate(keys)])
         self.assertTrue(result['ok']); self.assertFalse(result['correct'])
         self.assertEqual(result['reward_seconds'], 0)
-        self.assertEqual(len(self.ledger), 1)
 
-    def test_missing_disabled_stale_and_wrong_identity_status(self):
-        for updates in ({'phase': 'paused'}, {'philosophy': 'together'}, {'credits': {'enabled': False}}, {'api_version': 2}):
-            self.publish(**updates)
-            self.assertFalse(self.send('grove', 'begin', grade=5)['ok'])
-        self.publish(); os.utime(self.status_path, (self.now-31, self.now-31))
-        self.assertFalse(self.send('typing', 'begin', lesson='words')['ok'])
-        self.publish(plugin_id='other.screen-time')
-        self.assertFalse(self.send('grove', 'status')['available'])
-        self.status_path.unlink()
-        self.assertTrue(self.solve_pet(self.pawberry())['ok'], 'ordinary Pawberry practice must remain available')
-        self.assertFalse(self.ledger)
+    def test_old_pending_credits_are_retired_without_calling_any_transport(self):
+        for module, service in self.host.services.items():
+            state = deepcopy(service.account(self.uid))
+            state['receipts'] = {
+                'pending-platform': {'id': 'pending-platform', 'backend': 'platform', 'reward_seconds': None, 'reward_day': '2026-09-14'},
+                'pending-legacy': {'id': 'pending-legacy', 'requested_seconds': 180, 'reward_seconds': None},
+                'already-paid': {'id': 'already-paid', 'reward_seconds': 60}}
+            if module == 'pawberry':
+                state['receipt'] = state['receipts']['pending-legacy']
+                state['counts']['add'] = 4
+            service.persist(self.uid, state)
+            service.accounts.clear()
+        with patch('subprocess.run', side_effect=AssertionError('games must not call a time service')):
+            self.host.refresh(self.now)
+            for module, service in self.host.services.items():
+                state = service.account(self.uid)
+                self.assertEqual(state['receipts']['pending-platform']['reward_seconds'], 0)
+                self.assertEqual(state['receipts']['pending-legacy']['reward_seconds'], 0)
+                self.assertEqual(state['receipts']['already-paid']['reward_seconds'], 60)
+                service.accounts.clear()
+                self.host.refresh(self.now)
+                self.assertTrue(self.send(module, 'status')['ok'])
+            self.assertEqual(self.send('pawberry', 'status')['completed']['add'], 4)
+            self.assertEqual(self.solve_pet(self.pawberry())['reward_seconds'], 0)
 
-    def test_uncertain_response_restart_and_replay_credit_only_once(self):
-        attempted = threading.Event()
-        def lose_ack(*args):
-            self.credit(*args); attempted.set()
-            raise OSError('reply lost after commit')
-        self.host.platform.transport = lose_ack
-        started = self.send('grove', 'begin', grade=5)
-        pending = self.host.services['grove'].account(self.uid)['pending']; self.advance()
-        self.send('grove', 'complete', id=pending['id'], answer=pending['answer'])
-        self.assertTrue(attempted.wait(2))
-        self.host.platform.close()
-        self.host.platform = Platform(self.root/'platform', self.credit, clock=lambda:self.now, trusted_owner=os.getuid())
-        self.addCleanup(self.host.platform.close)
-        self.host.services['grove'].accounts.clear()
-        self.host.services['grove'].tick(self.now, 0)
-        self.assertEqual(self.settled('grove', pending['id']), 60)
-        self.assertEqual(len(self.ledger), 1)
-        self.assertEqual(len(set(self.calls)), 1)
-
-    def test_external_credit_wait_does_not_block_verifier_lock(self):
-        entered, release = threading.Event(), threading.Event()
-        self.addCleanup(release.set)
-        def waiting(*args):
-            entered.set(); release.wait(2); return self.credit(*args)
-        self.host.platform.transport = waiting
-        self.send('grove', 'begin', grade=5)
-        pending = self.host.services['grove'].account(self.uid)['pending']; self.advance()
-        self.send('grove', 'complete', id=pending['id'], answer=pending['answer'])
-        self.assertTrue(entered.wait(1))
-        before = time.monotonic()
-        self.assertTrue(self.pawberry()['ok'])
-        self.assertLess(time.monotonic()-before, .5)
-        release.set()
-
-    def test_existing_pawberry_config_and_counters_survive_enrollment(self):
+    def test_existing_pawberry_limits_and_work_survive_removing_saved_rewards(self):
         service = self.host.services['pawberry']
-        old = {'add': 5, 'subtract': 8, 'multiply': 2, 'screen_time': {'enabled': True, 'minutes_per_problem': 3, 'daily_cap_minutes': 20}}
-        service.config['users'][self.user] = deepcopy(old)
-        state = service.account(self.uid); state['counts']['add'] = 4; service.persist(self.uid, state)
-        self.send('pawberry', 'users.set', peer=0, user=self.user, enabled=True)
-        self.assertEqual(service.config['users'][self.user], old)
-        self.assertEqual(self.send('pawberry', 'status')['remaining']['add'], 1)
-        self.assertEqual(service.reward_settings(self.user)['backend'], 'legacy')
+        for backend in ('legacy', 'platform'):
+            limits = {'add': 5, 'subtract': 8, 'multiply': 2}
+            config = {'users': {self.user: {**limits, 'screen_time': {'enabled': True, 'backend': backend}}}}
+            storage.write_json(service.path, config)
+            started = self.pawberry('multiply')
+            state = service.account(self.uid); state['counts']['add'] = 4; service.persist(self.uid, state)
+            self.host.services['pawberry'] = type(service)(self.host)
+            service = self.host.services['pawberry']
+            self.assertEqual(service.config['users'][self.user], limits)
+            self.assertEqual(storage.read_json(service.path, {})['users'][self.user], limits)
+            self.assertEqual(self.send('pawberry', 'status')['remaining']['add'], 1)
+            result = self.solve_pet(started)
+            self.assertTrue(result['ok'], result)
+            self.assertEqual(result['reward_seconds'], 0)
+            self.send('pawberry', 'users.set', peer=0, user=self.user, enabled=True)
+            self.assertEqual(service.config['users'][self.user], limits)
+
 
 
 class Packaging(unittest.TestCase):

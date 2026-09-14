@@ -1,4 +1,4 @@
-// Standalone practice facts. Rewards use questions owned by the game verifier.
+// Standalone arithmetic facts for local practice.
 function level(value) {
   var n = Math.floor(Number(value))
   return n >= 1 && n <= 6 ? n : 5

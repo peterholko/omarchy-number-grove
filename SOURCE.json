@@ -4,10 +4,8 @@
   "path": "shell/plugins/number-grove",
   "exporter": "packaging/community/export.py",
   "development_repository": "https://github.com/peterholko/omarchy-number-grove",
-  "screen_time_integration": {
-    "plugin": "peterholko.screen-time",
-    "api_version": 1,
-    "provider": "peterholko.number-grove",
-    "service_version": "3.0.1"
+  "practice_service": {
+    "version": "4.0.0",
+    "screen_time_rewards": false
   }
 }

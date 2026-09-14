@@ -3,7 +3,7 @@ import QtQuick.Controls
 import "Facts.js" as Facts
 import "GameEngine.js" as Engine
 
-// A reusable Qt Quick game. Shell and reward transport live in separate adapters.
+// A reusable Qt Quick game with local questions and scoring.
 FocusScope {
   id: root
   objectName: "numberGroveGame"
@@ -11,24 +11,11 @@ FocusScope {
   implicitWidth: 1040
   implicitHeight: 760
   property bool windowActive: true
-  property bool rewardAvailable: false
-  property string rewardNote: "Practice is ready. Add Screen Time to enable parent-controlled rewards."
-  property int rewardGrade: 5
-  property int rewardQuestions: 10
-  property int rewardSeconds: 0
-  property var rewardReceipts: []
-  onRewardReceiptsChanged: session = Engine.credits(session, rewardReceipts)
-  signal parentSettingsRequested()
   property int grade: 5
   property bool calm: false
   property bool paused: false
   property string screen: "start"
-  property var session: Engine.create(5, "practice", 10, 1)
-  property int requestSerial: 0
-  property int pendingRequest: -1
-  property string pendingKind: ""
-  signal rewardRequest(int token, string kind, string questionId, int value)
-  signal cancelRewards()
+  property var session: Engine.create(5, 10, 1)
   signal quitRequested()
 
   // Focusing a scope preserves its last button. Give gameplay its own target.
@@ -40,69 +27,31 @@ FocusScope {
   function focusGame() { gameInput.forceActiveFocus() }
 
   function reset() {
-    pendingRequest = -1
-    requestSerial++
-    cancelRewards()
     screen = "start"
     paused = false
     focusGame()
   }
-  function start(mode) {
-    if (mode === "earn" && !rewardAvailable) return
-    pendingRequest = -1
-    cancelRewards()
-    session = Engine.create(mode === "earn" ? Facts.level(rewardGrade) : Facts.level(grade),
-                            mode, mode === "earn" ? rewardQuestions : 10, Date.now())
+  function start() {
+    session = Engine.create(Facts.level(grade), 10, Date.now())
     screen = "game"
     paused = false
-    focusGame()
     nextQuestion()
   }
-  function request(kind, id, value) {
-    pendingKind = kind
-    pendingRequest = ++requestSerial
-    rewardRequest(pendingRequest, kind, id || "", value || 0)
-  }
   function nextQuestion() {
-    if (pendingRequest !== -1) return
-    session = Engine.waiting(session)
-    if (session.mode === "practice") session = Engine.board(session, Facts.question(session.grade))
-    else request("next", "", session.grade)
+    session = Engine.board(session, Facts.question(session.grade))
     focusGame()
-  }
-  function acceptReward(token, result) {
-    if (token !== pendingRequest || screen !== "game") return
-    var kind = pendingKind
-    pendingRequest = -1
-    if (kind === "next") {
-      if (result && result.ok && result.question) {
-        // The verifier confirms the selected grade and issues the question.
-        var updated = JSON.parse(JSON.stringify(session))
-        updated.grade = Facts.level(String(result.level).replace("grade", ""))
-        updated.total = Math.max(1, Math.min(50, Number(result.questions_per_set) || 10))
-        session = Engine.board(updated, result.question)
-      } else {
-        var reason = result && result.error
-        session = Engine.failure(session, reason === "daily_cap_reached"
-          ? "You have reached today's reward limit. There is always more to practise."
-          : reason === "earning_disabled" ? "Rewards are switched off. You can keep practising."
-          : "Screen-time rewards are unavailable. You can start a practice round.")
-      }
-    } else session = Engine.verdict(session, result)
   }
   function move(dx, dy) {
     if (screen !== "game" || paused) return
     session = Engine.move(session, dx, dy)
   }
   function collect() {
-    if (screen !== "game" || paused || pendingRequest !== -1) return
+    if (screen !== "game" || paused) return
     session = Engine.collect(session)
     if (session.phase !== "checking") return
     var value = session.tiles[session.player]
-    if (session.mode === "practice") {
-      session = Engine.verdict(session, {ok: true, correct: value === session.question.answer,
-                                        answer: session.question.answer, reward_seconds: 0})
-    } else request("answer", session.question.id, value)
+    session = Engine.verdict(session, {ok: true, correct: value === session.question.answer,
+                                      answer: session.question.answer})
   }
   function togglePause() {
     if (screen !== "game") return
@@ -110,17 +59,11 @@ FocusScope {
     focusGame()
   }
   onWindowActiveChanged: if (!windowActive && screen === "game") paused = true
-  onRewardAvailableChanged: {
-    // Do not discard an in-flight answer: it may contain the final capped credit.
-    if (!rewardAvailable && screen === "game" && session.mode === "earn" && session.phase === "play") {
-      session = Engine.failure(session, "Reward play is paused by your screen-time settings. Start a practice round to keep growing.")
-    }
-  }
   Keys.onPressed: function(event) {
     if (event.key === Qt.Key_Escape || event.key === Qt.Key_P) {
       if (screen === "start") quitRequested()
       else togglePause()
-    } else if (screen === "start" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) start("practice")
+    } else if (screen === "start" && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) start()
     else if (!paused && screen === "game") {
       if (event.key === Qt.Key_Left || event.key === Qt.Key_A) move(-1, 0)
       else if (event.key === Qt.Key_Right || event.key === Qt.Key_D) move(1, 0)
@@ -148,7 +91,7 @@ FocusScope {
     anchors.centerIn: parent
     scale: Math.min(root.width / width, root.height / height)
     readonly property bool playing: root.screen === "game"
-    readonly property var preview: Engine.board(Engine.create(5, "practice", 10, 173),
+    readonly property var preview: Engine.board(Engine.create(5, 10, 173),
       {text: "7 × 8", choices: [42, 48, 54, 56, 63, 72]})
     readonly property var game: playing ? root.session : preview
 
@@ -160,11 +103,6 @@ FocusScope {
       x: 844; y: 28; width: 156; height: 42
       text: page.playing ? (root.paused ? "Resume" : "Pause  ·  P") : "Close"
       onClicked: page.playing ? root.togglePause() : root.quitRequested()
-    }
-    GroveButton {
-      objectName: "screenTimeSettingsButton"; x: 642; y: 28; width: 188; height: 42
-      text: "Screen Time · Parents"; font.pixelSize: 13
-      onClicked: { if (page.playing) root.paused = true; root.parentSettingsRequested() }
     }
     Rectangle { x: 40; y: 94; width: 960; height: 1; color: "#DCE0CE" }
 
@@ -196,22 +134,12 @@ FocusScope {
         font.pixelSize: 14
         onClicked: { root.calm = !root.calm; root.focusGame() }
       }
-      GroveButton { objectName: "practiceButton"; width: 306; primary: true; text: "Play practice  →"; onClicked: root.start("practice") }
-      GroveButton {
-        objectName: "earnButton"; width: 306; enabled: root.rewardAvailable
-        text: "Play & earn time  →"; onClicked: root.start("earn")
-      }
-      Text {
-        width: 306; text: root.rewardAvailable
-          ? root.rewardSeconds + " seconds per correct answer. Parent daily limits apply."
-          : root.rewardNote
-        color: "#6E7D68"; font.pixelSize: 12; lineHeight: 1.15; wrapMode: Text.WordWrap
-      }
+      GroveButton { objectName: "practiceButton"; width: 306; primary: true; text: "Play  →"; onClicked: root.start() }
     }
     Column {
       x: 40; y: 136; width: 300; spacing: 22
       visible: page.playing
-      Text { text: root.session.mode === "earn" ? "PLAY & EARN" : "PRACTICE GARDEN"; font.pixelSize: 12; font.letterSpacing: 2; color: "#698063"; font.weight: Font.Bold }
+      Text { text: "PRACTICE GARDEN"; font.pixelSize: 12; font.letterSpacing: 2; color: "#698063"; font.weight: Font.Bold }
       Text { text: "Grow at your\nown pace."; font.pixelSize: 39; font.weight: Font.Bold; color: "#244B36" }
       Text { text: "Grade " + root.session.grade + "  ·  " + (root.calm ? "Calm garden" : "Trail " + Engine.difficulty(root.session)); font.pixelSize: 17; color: "#61715D" }
       Rectangle {
@@ -224,9 +152,7 @@ FocusScope {
         }
       }
       Text {
-        width: 292; text: root.session.mode === "earn"
-          ? (Math.round(root.session.earned / 6) / 10) + " min earned this round\nCredits are confirmed by Screen Time."
-          : "Each correct fact plants a seed.\nA wrong answer costs one heart."
+        width: 292; text: "Each correct fact plants a seed.\nA wrong answer costs one heart."
         font.pixelSize: 16; lineHeight: 1.3; wrapMode: Text.WordWrap; color: "#61715D"
       }
       Text { width: 292; text: "ARROWS / WASD  ·  move\nSPACE / ENTER  ·  collect\nP / ESC  ·  pause"; font.pixelSize: 13; lineHeight: 1.6; color: "#698063"; font.weight: Font.Medium }
@@ -318,7 +244,6 @@ FocusScope {
               width: parent.width; horizontalAlignment: Text.AlignHCenter
               text: root.paused ? "Your garden will be here when you're ready."
                 : root.session.phase === "results" ? root.session.correct + " seeds  ·  " + root.session.score + " points\n" + root.session.message
-                  + (root.session.mode === "earn" ? "\n" + (Math.round(root.session.earned / 6) / 10) + " min added to your screen time." : "")
                 : root.session.message
               font.pixelSize: 17; color: "#61715D"; wrapMode: Text.WordWrap; lineHeight: 1.3
             }

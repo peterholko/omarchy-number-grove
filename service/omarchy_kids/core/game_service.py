@@ -4,7 +4,18 @@ from datetime import datetime
 import pwd
 import secrets
 from . import paths, storage
-from .game_platform import PROVIDERS
+
+
+def retire_time_rewards(state):
+    """Keep completion history, but never retry an old time-credit request."""
+    changed = False
+    for receipt in state.get("receipts", {}).values():
+        if receipt.get("reward_seconds") is None:
+            receipt.update(reward_seconds=0, reward_reason="rewards_removed")
+            changed = True
+    if state.get("receipt"):
+        state["receipt"] = state["receipts"].get(state["receipt"]["id"], state["receipt"])
+    return changed
 
 
 class GameService:
@@ -12,7 +23,6 @@ class GameService:
 
     def __init__(self, host):
         self.host = host
-        self.provider = PROVIDERS[self.module][0]
         self.path = host.layout.config_path.with_name(self.module + ".json")
         self.state_dir = host.layout.state_dir / self.module
         self.config = storage.read_json(self.path, {"users": {}})
@@ -31,28 +41,21 @@ class GameService:
         if uid not in self.accounts:
             paths.private_dir(self.state_dir, scrub=False)
             self.accounts[uid] = storage.read_json(self.state_dir / (str(uid) + ".json"), {"pending": None, "receipts": {}})
+            if retire_time_rewards(self.accounts[uid]):
+                self.persist(uid, self.accounts[uid])
         return self.accounts[uid]
 
     def persist(self, uid, state):
         storage.write_json(self.state_dir / (str(uid) + ".json"), state)
         self.accounts[uid] = state
 
-    def settle(self, uid):
-        state = copy.deepcopy(self.account(uid))
-        changed = False
-        for receipt in state["receipts"].values():
-            if receipt.get("reward_seconds") is None:
-                seconds = self.host.platform.settle(pwd.getpwuid(uid).pw_name, self.provider, receipt)
-                if seconds is not None:
-                    receipt["reward_seconds"] = seconds; changed = True
-        if changed:
-            self.persist(uid, state)
-
     def status(self, uid):
-        self.settle(uid)
         state = self.account(uid)
-        return {"ok": True, **self.host.platform.status(uid, self.provider),
-            "receipts": [{"id": r["id"], "reward_seconds": r.get("reward_seconds")}
+        # Older clients see rewards as unavailable. The retained verifier can
+        # still validate a challenge, but has no screen-time transport.
+        return {"ok": True, "practice_only": True, "available": False,
+            "active": False, "enabled": False, "reason": "rewards_removed",
+            "receipts": [{"id": r["id"], "reward_seconds": 0}
                 for r in list(state["receipts"].values())[-256:]]}
 
     def dispatch(self, peer, message):
@@ -81,12 +84,9 @@ class GameService:
                 return self.status(uid)
             if command not in ("begin", "complete"):
                 return {"ok": False, "error": "unknown_command"}
-            status = self.status(uid)
             state = copy.deepcopy(self.account(uid))
             now = self.host.clock.now()
             if command == "begin":
-                if not status["active"]:
-                    return {"ok": False, "error": status["reason"]}
                 try:
                     challenge = self.challenge(message)
                 except ValueError:
@@ -98,8 +98,8 @@ class GameService:
             identifier = message.get("id")
             if isinstance(identifier, str) and identifier in state["receipts"]:
                 receipt = state["receipts"][identifier]
-                return {"ok": True, "id": identifier, **receipt["verdict"], "reward_seconds": receipt.get("reward_seconds"),
-                    "reward_pending": receipt.get("reward_seconds") is None, "already_completed": True}
+                return {"ok": True, "id": identifier, **receipt["verdict"], "reward_seconds": 0,
+                    "reward_pending": False, "already_completed": True}
             pending = state.get("pending")
             if not pending or identifier != pending["id"]:
                 return {"ok": False, "error": "stale_challenge"}
@@ -112,31 +112,20 @@ class GameService:
             if not verdict.get("ok"):
                 return verdict
             receipts = state["receipts"]
-            # Keep unresolved requests; completed receipts may be trimmed
-            # because the consumed challenge can no longer be resubmitted.
+            # Keep recent verdicts for retries without recounting a completion.
             while len(receipts) >= 256:
-                obsolete = next((k for k, r in receipts.items() if r.get("reward_seconds") is not None), None)
-                if obsolete is None:
-                    break
-                receipts.pop(obsolete)
-            credit = verdict.get("correct", True) and len(receipts) < 256
-            receipt = {"id": identifier, "backend": "platform", "reward_day": pending["day"],
-                "reward_seconds": None if credit else 0, "verdict": verdict}
+                receipts.pop(next(iter(receipts)))
+            receipt = {"id": identifier, "reward_seconds": 0, "verdict": verdict}
             state["pending"] = None
-            # Retain the latest verdict too, so a lost game acknowledgement
-            # can be replayed even while the credit queue is full.
             receipts[identifier] = receipt
             self.persist(uid, state)
-            self.settle(uid)
-            saved = self.account(uid)["receipts"].get(identifier, receipt)
-            return {**verdict, "id": identifier, "reward_seconds": saved.get("reward_seconds"),
-                "reward_pending": saved.get("reward_seconds") is None, "already_completed": False}
+            return {**verdict, "id": identifier, "reward_seconds": 0,
+                "reward_pending": False, "already_completed": False}
 
     def tick(self, now, elapsed):
-        # Load enrolled state after a restart so lost acknowledgements settle
-        # even if the game window is no longer open.
+        # Retire pending credits from older releases, including after reboot.
         for uid in self.managed_uids():
-            self.settle(uid)
+            self.account(uid)
 
     def save(self):
         pass

@@ -204,55 +204,8 @@ QTest.qWait(150)
 capture('small-start')
 view.resize(1040, 760)
 
-# The same UI accepts delayed server replies and ignores abandoned sessions.
-game.setProperty('calm', True)
-game.setProperty('rewardAvailable', True)
-game.setProperty('rewardGrade', 6)
-game.setProperty('rewardQuestions', 2)
-requests = []
-game.rewardRequest.connect(lambda token, kind, qid, value: requests.append((token, kind, qid, value)))
-click('earnButton', focused=True)
-assert state()['phase'] == 'waiting'
-key(Qt.Key_Space)
-key(Qt.Key_Return)
-assert len(requests) == 1, 'focused Earn button restarted the reward request'
-assert state()['phase'] == 'waiting'
-token = requests[-1][0]
-reply = {'ok': True, 'level': 'grade6', 'questions_per_set': 2,
-    'question': {'id': 'test-question', 'text': '7 × 8', 'choices': [42, 48, 54, 56, 63, 72]}}
-js(f'game.acceptReward({token + 99}, {json.dumps(reply)})')
-assert state()['phase'] == 'waiting'
-js(f'game.acceptReward({token}, {json.dumps(reply)})')
-walk_to(56)
-key(Qt.Key_Space)
-assert requests[-1][1:] == ('answer', 'test-question', 56)
-assert state()['phase'] == 'checking'
-snapshot = state()
-key(Qt.Key_Space)
-key(Qt.Key_Return)
-assert len(requests) == 2, 'collection was submitted more than once'
-QTest.qWait(1800)
-assert state() == snapshot
-capture('checking')
-token = requests[-1][0]
-js(f'game.acceptReward({token}, {{ok: true, correct: true, answer: 56, reward_seconds: null}})')
-assert state()['earned'] == 0
-capture('reward-pending')
-js('game.rewardReceipts = [{id:"another-round",reward_seconds:600},{id:"test-question",reward_seconds:30}]')
-assert state()['earned'] == 30
-js('game.rewardReceipts = [{id:"test-question",reward_seconds:30}]')
-assert state()['earned'] == 30, 'status replay duplicated the displayed credit'
-capture('reward')
-key(Qt.Key_Return)
-abandoned = requests[-1][0]
-js('game.reset(); game.start("practice")')
-snapshot = state()
-js(f'game.acceptReward({abandoned}, {json.dumps(reply)})')
-assert state() == snapshot
-js('game.reset(); game.start("earn")')
-token = requests[-1][0]
-js(f'game.acceptReward({token}, {{ok: false, error: "daily_cap_reached"}})')
-assert state()['phase'] == 'error'
-capture('cap')
+assert game.metaObject().indexOfProperty('rewardAvailable') == -1
+assert not (ROOT / 'RewardBridge.qml').exists()
 assert not errors, '\n'.join(errors)
-print('PASS: real Qt Quick button focus, Tab navigation, Space/Return/Enter collection, menu, grades, 10 correct facts, 3 misses, movement, pause/focus, resize, delayed rewards, stale replies and cap feedback')
+print('PASS: real Qt Quick controls, Space/Enter collection, grades, full rounds, misses, movement, pause/focus and compact layouts; no reward connection.')
+view.close()

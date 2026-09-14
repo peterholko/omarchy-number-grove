@@ -119,16 +119,15 @@ def selected_modules(previous, module):
     return sorted(modules), selected
 
 
-def register_providers(modules):
-    from omarchy_kids.core.game_platform import PROVIDERS
+def remove_game_providers():
+    """Retire only these games' old registrations; keep balances and history."""
     admin = Path('/usr/bin/omarchy-peterholko-screen-time-admin')
     if not admin.is_file():
-        print('Optional rewards: install peterholko.screen-time, then rerun this setup to register the games.')
         return
-    for module in modules:
-        if module in PROVIDERS:
-            identifier, name, unit = PROVIDERS[module]
-            run(str(admin), 'provider-register', identifier, '--name', name, '--unit', unit)
+    for identifier in ('peterholko.pawberry', 'peterholko.number-grove', 'peterholko.paw-post'):
+        result = run(str(admin), 'provider-remove', identifier, capture_output=True, text=True)
+        if json.loads(result.stdout).get('ok') is not True:
+            raise ValueError(f'could not remove the former Screen Time registration for {identifier}')
 
 
 def initialize_config():
@@ -244,9 +243,9 @@ def install(args):
         # decisions. A fresh install enrolls both parts of the combined control.
         if module not in previous.get('modules', []) or not args.upgrade or module in ('pawberry', 'grove', 'typing'):
             enroll(module, args.user, True)
-    register_providers(modules)
+    remove_game_providers()
     print(f'{args.module} service installed for {args.user}. Existing settings were retained.')
-    print('Optional rewards are controlled in the separate Screen Time parent settings. Registration does not enable rewards.')
+    print('These games do not award screen time. Existing practice limits and completed work are kept.')
 
 
 def restore_desktop(username):

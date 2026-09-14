@@ -1,1 +1,1 @@
-"""Parent-controlled Pawberry practice limits and optional screen-time rewards."""
+"""Parent-controlled Pawberry daily practice limits."""

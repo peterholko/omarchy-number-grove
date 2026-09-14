@@ -17,7 +17,6 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
 ReadWritePaths=/etc/omarchy-kids-controls /var/lib/omarchy-kids-controls /run/omarchy-kids-controls
-ReadWritePaths=-/var/lib/peterholko-screen-time -/run/peterholko-screen-time
 
 [Install]
 WantedBy=multi-user.target

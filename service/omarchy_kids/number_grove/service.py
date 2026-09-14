@@ -1,4 +1,4 @@
-"""Number Grove owns its arithmetic challenges; Screen Time owns minutes."""
+"""Arithmetic challenge verification for previously installed clients."""
 import secrets
 from ..core.game_service import GameService
 

@@ -13,7 +13,6 @@ Item {
   readonly property bool schoolAllowed: schoolPolicy.allowed
 
   function open(payloadJson) {
-    rewards.refresh()
     opened = true
     game.reset()
     Qt.callLater(function() { game.forceActiveFocus() })
@@ -21,10 +20,6 @@ Item {
   function close() {
     game.reset()
     opened = false
-  }
-  RewardBridge {
-    id: rewards
-    onReply: function(token, result) { game.acceptReward(token, result) }
   }
   FloatingWindow {
     id: win
@@ -40,15 +35,6 @@ Item {
       id: game
       anchors.fill: parent
       windowActive: Window.active && root.opened
-      rewardAvailable: rewards.available
-      rewardNote: rewards.note
-      rewardGrade: game.grade
-      rewardReceipts: rewards.receipts
-      rewardQuestions: 10
-      rewardSeconds: rewards.seconds
-      onParentSettingsRequested: rewards.openParentSettings()
-      onRewardRequest: function(token, kind, questionId, value) { rewards.request(token, kind === "next" ? {cmd: "begin", grade: value} : {cmd: "complete", id: questionId, answer: value}) }
-      onCancelRewards: rewards.cancel()
       onQuitRequested: root.close()
     }
   }
