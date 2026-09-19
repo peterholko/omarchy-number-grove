@@ -3,6 +3,6 @@ Type=Application
 Name=Number Grove
 Comment=An arithmetic garden game with calm and adventure play for grades 1–6.
 Exec=omarchy-shell shell summon io.github.peterholko.number-grove {}
-Icon=applications-education
+Icon=io.github.peterholko.number-grove
 Terminal=false
 Categories=Education;Game;

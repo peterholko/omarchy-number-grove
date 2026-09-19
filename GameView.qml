@@ -269,7 +269,7 @@ FocusScope {
         : "01  Solve the fact     02  Find the seed     03  Press Space"
       color: "#65765F"; font.pixelSize: 14; wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
     }
-    Text { x: 40; y: 726; text: "OMARCHY KIDS  /  NUMBER GROVE"; font.pixelSize: 10; font.letterSpacing: 1.5; color: "#86917D" }
+    Text { x: 40; y: 726; text: "NUMBER GROVE"; font.pixelSize: 10; font.letterSpacing: 1.5; color: "#86917D" }
     Text { anchors.right: parent.right; anchors.rightMargin: 40; y: 724; text: "Built for recall. Made for play."; font.pixelSize: 12; color: "#86917D" }
   }
 }

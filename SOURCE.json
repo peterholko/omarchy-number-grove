@@ -4,8 +4,7 @@
   "path": "shell/plugins/number-grove",
   "exporter": "packaging/community/export.py",
   "development_repository": "https://github.com/peterholko/omarchy-number-grove",
-  "practice_service": {
-    "version": "4.0.0",
-    "screen_time_rewards": false
-  }
+  "plugin_version": "2.1.0",
+  "screen_time_rewards": false,
+  "background_service": false
 }
